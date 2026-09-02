@@ -39,6 +39,7 @@ export default function AppLayout() {
       ],
     },
     { key: '/transactions', icon: <AccountBookOutlined />, label: t('nav.transactions') },
+    { key: '/transaction-categories', icon: <TagsOutlined />, label: t('transactionCategory.title') },
     { key: '/accounts', icon: <WalletOutlined />, label: t('nav.accounts') },
     { key: '/bill-import', icon: <FileExcelOutlined />, label: t('nav.billImport') },
     { key: '/import-export', icon: <ImportOutlined />, label: t('nav.importExport') },

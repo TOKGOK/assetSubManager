@@ -62,7 +62,8 @@
     "switchToLight": "Switch to light mode",
     "switchToDark": "Switch to dark mode",
     "requestFailed": "Request failed",
-    "networkError": "Network error"
+    "networkError": "Network error",
+    "connectionFailed": "Connection Failed"
   },
   "dashboard": {
     "totalAssets": "Total Assets",
@@ -71,13 +72,18 @@
     "expiringSoon": "Expiring Soon",
     "monthlySubscription": "Monthly Subscription",
     "assetDistribution": "Asset Distribution",
-    "categoryDistribution": "Category Distribution",
-    "categoryValue": "Category Value",
-    "noCategoryData": "No category data",
+    "categoryDistribution": "Asset Type Distribution",
+    "categoryValue": "Type Asset Value",
+    "noCategoryData": "No type data",
+    "typeNames": {
+      "physical": "Physical Assets",
+      "virtual": "Virtual Assets",
+      "subscription": "Subscriptions"
+    },
     "upcomingSubscriptions": "Upcoming Subscriptions",
     "noExpiring": "No expiring subscriptions",
     "name": "Name",
-    "amount": "Amount",
+    "value": "Value",
     "cycle": "Cycle",
     "dueDate": "Due Date",
     "unit": {
@@ -85,13 +91,13 @@
       "pieces": "",
       "perMonth": "/mo",
       "items": ""
-    }
+    },
+    "loadFailed": "Load Failed"
   },
   "assets": {
     "name": "Name",
     "category": "Category",
     "purchaseDate": "Purchase Date",
-    "purchasePrice": "Purchase Price",
     "currentValue": "Current Value",
     "currency": "Currency",
     "notes": "Notes",
@@ -113,7 +119,6 @@
     "statusDisposed": "Disposed",
     "recordValue": "Record Value",
     "valueRecorded": "Value recorded",
-    "estimatedValue": "Estimated Value",
     "valueHistory": "Value History",
     "value": "Value",
     "date": "Date",
@@ -200,7 +205,7 @@
   },
   "subscriptions": {
     "name": "Subscription Name",
-    "amount": "Amount",
+    "value": "Value",
     "cycle": "Cycle",
     "nextRenewal": "Next Renewal",
     "autoRenew": "Auto Renew",
@@ -339,7 +344,9 @@
     "type": "Type",
     "income": "Income",
     "expense": "Expense",
-    "deleteConfirm": "Are you sure to delete this category?"
+    "deleteConfirm": "Are you sure to delete this category?",
+    "sortOrder": "Sort Order",
+    "all": "All"
   },
   "account": {
     "title": "Accounts",
@@ -453,6 +460,11 @@
     "yes": "Yes",
     "no": "No",
     "fieldCount": "Fields"
+  },
+  "serviceUnavailable": {
+    "title": "Service Unavailable",
+    "description": "Cannot connect to the backend service. Please check if the service is running.",
+    "retry": "Reconnect"
   },
   "assetManagement": {
     "type": "Asset Type",

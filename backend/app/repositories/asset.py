@@ -133,12 +133,14 @@ class AssetRepo:
         type_ids: list[int] | None = None,
         category_id: int | None = None,
         search: str = "",
+        status: str = "",
         page: int = 1,
         page_size: int = 20,
     ) -> tuple[list[dict], int]:
         """Return a paginated list of assets with optional filters.
 
         *search* matches against ``name`` and stringified ``custom_data``.
+        *status* filters by the status value inside custom_data.
         """
         where_clauses: list[str] = ["1=1"]
         args: list[Any] = []
@@ -157,6 +159,19 @@ class AssetRepo:
                 "(a.name LIKE ? OR CAST(a.custom_data AS TEXT) LIKE ?)"
             )
             args.extend([f"%{search}%", f"%{search}%"])
+
+        if status:
+            if status == "active":
+                # "active" includes rows where status is missing/null
+                # (the service layer defaults those to "active")
+                where_clauses.append(
+                    "(COALESCE(json_extract(a.custom_data, '$.status'), 'active') = ?)"
+                )
+            else:
+                where_clauses.append(
+                    "(json_extract(a.custom_data, '$.status') = ?)"
+                )
+            args.append(status)
 
         where = " AND ".join(where_clauses)
 
@@ -278,7 +293,7 @@ class AssetRepo:
                     cd = {}
             if not isinstance(cd, dict):
                 continue
-            amount = float(cd.get("amount", 0) or 0)
+            amount = float(cd.get("value", 0) or 0)
             cycle = str(cd.get("cycle", "") or "")
             # Convert cycle to monthly
             if cycle == "monthly" or cycle == "月付":
@@ -290,21 +305,6 @@ class AssetRepo:
             else:
                 total += amount  # default: treat as monthly
         return total
-
-    def get_category_stats(self, type_id: int) -> list[dict]:
-        """Return per-category count and total value for a given asset type."""
-        rows = self.db.execute(
-            """SELECT COALESCE(c.name, '未分类') AS cat_name,
-                      COUNT(*) AS cnt,
-                      COALESCE(SUM(CAST(json_extract(a.custom_data, '$.current_value') AS REAL)), 0) AS total_value
-               FROM assets a
-               LEFT JOIN categories c ON a.category_id = c.id
-               WHERE a.type_id = ?
-               GROUP BY a.category_id
-               ORDER BY cnt DESC""",
-            (type_id,),
-        ).fetchall()
-        return [{"name": r[0], "count": r[1], "total_value": float(r[2])} for r in rows]
 
     def list_all(self) -> list[dict]:
         """Return all assets (with parsed custom_data and joined names)."""

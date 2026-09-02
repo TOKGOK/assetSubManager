@@ -5,8 +5,10 @@ import zhCN from 'antd/locale/zh_CN'
 import enUS from 'antd/locale/en_US'
 import { useTranslation } from 'react-i18next'
 import { useAppStore } from './stores/appStore'
+import { useConnectionStore } from './stores/connectionStore'
 import AppLayout from './components/layout/AppLayout'
 import ErrorBoundary from './components/common/ErrorBoundary'
+import ServiceUnavailable from './pages/ServiceUnavailable'
 import client from './api/client'
 
 const Dashboard = lazy(() => import('./pages/Dashboard'))
@@ -23,6 +25,7 @@ const Login = lazy(() => import('./pages/Login'))
 const TransactionList = lazy(() => import('./pages/Transactions/index'))
 const TransactionForm = lazy(() => import('./pages/Transactions/TransactionForm'))
 const Accounts = lazy(() => import('./pages/Accounts/index'))
+const TransactionCategories = lazy(() => import('./pages/TransactionCategories/index'))
 const BillImport = lazy(() => import('./pages/BillImport/index'))
 const AssetTypes = lazy(() => import('./pages/AssetTypes'))
 
@@ -32,12 +35,29 @@ function App() {
   const { i18n } = useTranslation()
   const antdLocale = i18n.language === 'en' ? enUS : zhCN
   const isDark = appTheme === 'dark'
+  const connectionStatus = useConnectionStore((s) => s.status)
+  const checkConnection = useConnectionStore((s) => s.checkConnection)
 
   useEffect(() => {
-    // Probe auth status so the 401 interceptor can redirect if needed
-    client.get('/auth/status').finally(() => setAuthChecked(true))
-  }, [])
+    // First check health/connection
+    checkConnection()
+  }, [checkConnection])
 
+  useEffect(() => {
+    // Only proceed to auth check after connection is established
+    if (connectionStatus === 'connected') {
+      // Probe auth status so the 401 interceptor can redirect if needed
+      client.get('/auth/status').finally(() => setAuthChecked(true))
+    }
+  }, [connectionStatus])
+
+  // Show loading while checking connection
+  if (connectionStatus === 'checking') return <Spin fullscreen />
+
+  // Show ServiceUnavailable if connection failed
+  if (connectionStatus === 'disconnected') return <ServiceUnavailable />
+
+  // Connection OK, but still checking auth
   if (!authChecked) return <Spin fullscreen />
 
   return (
@@ -66,6 +86,8 @@ function App() {
                 <Route path="/transactions/:id/edit" element={<Suspense fallback={<Spin />}><ErrorBoundary><TransactionForm /></ErrorBoundary></Suspense>} />
                 {/* 账户 */}
                 <Route path="/accounts" element={<Suspense fallback={<Spin />}><ErrorBoundary><Accounts /></ErrorBoundary></Suspense>} />
+                {/* 记账分类 */}
+                <Route path="/transaction-categories" element={<Suspense fallback={<Spin />}><ErrorBoundary><TransactionCategories /></ErrorBoundary></Suspense>} />
                 <Route path="/bill-import" element={<Suspense fallback={<Spin />}><ErrorBoundary><BillImport /></ErrorBoundary></Suspense>} />
                 {/* 分类管理 */}
                 <Route path="/categories" element={<Suspense fallback={<Spin />}><ErrorBoundary><Categories /></ErrorBoundary></Suspense>} />

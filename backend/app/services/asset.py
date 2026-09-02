@@ -92,10 +92,14 @@ def _validate_field(
 
     # -- select ---------------------------------------------------------
     elif ftype == "select":
-        choices = opts.get("choices", [])
-        valid_values = [c["value"] for c in choices if "value" in c]
-        if value not in valid_values:
-            return f"必须在选项 {valid_values} 中选择"
+        if opts.get("api_endpoint"):
+            # Dynamic select — choices come from API/DB, skip static validation
+            pass
+        else:
+            choices = opts.get("choices", [])
+            valid_values = [c["value"] for c in choices if "value" in c]
+            if value not in valid_values:
+                return f"必须在选项 {valid_values} 中选择"
 
     # -- relation -------------------------------------------------------
     elif ftype == "relation":
@@ -199,18 +203,62 @@ class AssetService:
     # ---- helpers -------------------------------------------------------
 
     def _enrich_item(self, item: dict) -> dict:
-        """Add ``computed_fields`` and ``type_field_config`` to an asset dict."""
-        field_config = item.pop("type_field_config", None)
-        if isinstance(field_config, str):
-            import json
+        """Transform flat DB fields into nested objects expected by the frontend.
+
+        The repository returns flat columns (type_name, type_icon, category_name,
+        type_field_config).  The frontend Asset TypeScript interface expects
+        nested asset_type and category objects.  This method bridges that gap.
+        """
+        import json as _json
+
+        # ---- Extract flat fields from DB row ----------------------------
+        type_name = item.pop("type_name", "") or ""
+        type_icon = item.pop("type_icon", "") or ""
+        category_name = item.pop("category_name", "") or ""
+        field_config_raw = item.pop("type_field_config", None)
+
+        # ---- Parse field_config JSON ------------------------------------
+        if isinstance(field_config_raw, str):
             try:
-                field_config = json.loads(field_config)
-            except (json.JSONDecodeError, TypeError):
+                field_config = _json.loads(field_config_raw)
+            except (_json.JSONDecodeError, TypeError):
                 field_config = {}
-        field_config = field_config or {}
+        elif isinstance(field_config_raw, dict):
+            field_config = field_config_raw
+        else:
+            field_config = {}
+
+        # ---- Build nested asset_type object -----------------------------
+        item["asset_type"] = {
+            "id": item.get("type_id"),
+            "name": type_name,
+            "icon": type_icon,
+        }
+
+        # ---- Build nested category object --------------------------------
+        cat_id = item.get("category_id")
+        if cat_id:
+            item["category"] = {
+                "id": cat_id,
+                "name": category_name,
+            }
+        else:
+            item["category"] = None
+
+        # ---- Evaluate computed fields ------------------------------------
         item["computed_fields"] = evaluate_computed_fields(
             field_config, item.get("custom_data")
         )
+
+        # ---- Derive a default status for display purposes ----------------
+        # The unified assets table has no top-level status column.
+        # For subscription-type assets the status lives inside custom_data.
+        # For other types we default to "active" so the UI can display
+        # something meaningful instead of "-".
+        if "status" not in item or item["status"] is None:
+            cd = item.get("custom_data") or {}
+            item["status"] = cd.get("status", "active")
+
         return item
 
     def _validate_and_clean(
@@ -231,6 +279,7 @@ class AssetService:
         type_ids: list[int] | None = None,
         category_id: int | None = None,
         search: str = "",
+        status: str = "",
         page: int = 1,
         page_size: int = 20,
     ) -> tuple[list[dict], int]:
@@ -238,6 +287,7 @@ class AssetService:
             type_ids=type_ids,
             category_id=category_id,
             search=search,
+            status=status,
             page=page,
             page_size=page_size,
         )
@@ -257,6 +307,14 @@ class AssetService:
     ) -> dict:
         # Validate type exists + custom_data
         cleaned = self._validate_and_clean(type_id, custom_data)
+
+        # Auto-set reminder_days for subscriptions if not provided
+        if type_id == 3:
+            if cleaned is None:
+                cleaned = {}
+            if "reminder_days" not in cleaned or cleaned["reminder_days"] is None:
+                cleaned["reminder_days"] = self._calc_default_reminder_days(cleaned)
+
         asset = self.repo.create(
             type_id=type_id,
             name=name,
@@ -267,6 +325,44 @@ class AssetService:
             "name": name, "type_id": type_id,
         })
         return self._enrich_item(asset)
+
+    def _calc_default_reminder_days(self, custom_data: dict) -> int:
+        """Calculate default reminder_days based on subscription cycle."""
+        cycle = custom_data.get("cycle")
+        if not cycle:
+            return 3
+        try:
+            period_id = int(cycle)
+        except (ValueError, TypeError):
+            return 3
+
+        period = self.repo.db.execute(
+            "SELECT * FROM subscription_periods WHERE id = ?", (period_id,)
+        ).fetchone()
+        if not period:
+            return 3
+
+        period = dict(period)
+        rule_type = period.get("rule_type", "")
+
+        if rule_type == "daily_interval":
+            interval = period.get("interval_days", 0)
+            hours = period.get("interval_hours", 0)
+            cycle_days = interval + (hours / 24.0)
+        elif rule_type == "monthly_day":
+            cycle_days = 30
+        elif rule_type == "yearly_date":
+            cycle_days = 365
+        elif rule_type == "custom":
+            interval = period.get("interval_days", 0)
+            hours = period.get("interval_hours", 0)
+            cycle_days = interval + (hours / 24.0)
+        else:
+            cycle_days = 30  # fallback
+
+        if cycle_days <= 0:
+            return 3
+        return min(3, int(cycle_days))
 
     def update(
         self,

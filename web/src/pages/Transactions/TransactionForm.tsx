@@ -46,7 +46,7 @@ export default function TransactionForm() {
     const payload: CreateTransactionRequest = {
       type: values.type,
       amount: values.amount,
-      transaction_date: values.transaction_date.format('YYYY-MM-DD'),
+      transaction_date: values.transaction_date.format('YYYY-MM-DD HH:mm:ss'),
       merchant: values.merchant || '',
       note: values.note || '',
     }
@@ -88,12 +88,12 @@ export default function TransactionForm() {
               <InputNumber className="w-full" min={0} precision={2} prefix="¥" />
             </Form.Item>
             <Form.Item name="transaction_date" label={t('transaction.date')} rules={[{ required: true }]} className="flex-1">
-              <DatePicker className="w-full" format="YYYY-MM-DD" />
+              <DatePicker className="w-full" showTime format="YYYY-MM-DD HH:mm:ss" />
             </Form.Item>
           </div>
 
           {watchedType !== 'transfer' && (
-            <Form.Item name="category_id" label={t('transaction.category')} rules={[{ required: true }]}>
+            <Form.Item name="category_id" label={t('transaction.category')}>
               <Select
                 placeholder={t('transaction.allCategories')}
                 allowClear
@@ -102,7 +102,7 @@ export default function TransactionForm() {
             </Form.Item>
           )}
 
-          <Form.Item name="account_id" label={t('transaction.account')} rules={[{ required: true }]}>
+          <Form.Item name="account_id" label={t('transaction.account')}>
             <Select
               placeholder={t('transaction.allAccounts')}
               allowClear
@@ -111,7 +111,7 @@ export default function TransactionForm() {
           </Form.Item>
 
           {watchedType === 'transfer' && (
-            <Form.Item name="to_account_id" label={t('transaction.toAccount')} rules={[{ required: true }]}>
+            <Form.Item name="to_account_id" label={t('transaction.toAccount')}>
               <Select
                 placeholder={t('transaction.allAccounts')}
                 allowClear

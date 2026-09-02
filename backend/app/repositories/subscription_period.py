@@ -94,23 +94,32 @@ class SubscriptionPeriodRepo:
             return next_date.strftime("%Y-%m-%d")
 
         elif period["rule_type"] == "monthly_day":
-            # 每月 X 日
-            month_day = period["month_day"] or 1
+            # month_day > 0: 每月固定 X 日（如"每月15日"）
+            # month_day == 0: 按开始日期的天数（如开始 8-27 → 每月 27 日）
+            if period["month_day"] and period["month_day"] > 0:
+                day = period["month_day"]
+            else:
+                day = start.day
             # 计算下个月的该日
             if start.month == 12:
                 next_month = datetime(start.year + 1, 1, 1)
             else:
                 next_month = datetime(start.year, start.month + 1, 1)
-            # 处理月末日期
+            # 处理月末日期（如 1月31日 → 2月28日）
             max_day = calendar.monthrange(next_month.year, next_month.month)[1]
-            day = min(month_day, max_day)
+            day = min(day, max_day)
             next_date = datetime(next_month.year, next_month.month, day)
             return next_date.strftime("%Y-%m-%d")
 
         elif period["rule_type"] == "yearly_date":
-            # 每年 X 月 X 日
-            month = period["month"] or 1
-            day = period["day"] or 1
+            # month > 0 且 day > 0: 每年固定 X月X日（如"每年3月1日"）
+            # 否则: 按开始日期的月日（如开始 8-27 → 次年 8-27）
+            if period["month"] and period["month"] > 0 and period["day"] and period["day"] > 0:
+                month = period["month"]
+                day = period["day"]
+            else:
+                month = start.month
+                day = start.day
             next_year = start.year + 1
             max_day = calendar.monthrange(next_year, month)[1]
             day = min(day, max_day)

@@ -5,7 +5,7 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Depends, Request
+from fastapi import FastAPI, Depends, Request, HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -30,6 +30,7 @@ from backend.app.services.account import AccountService
 from backend.app.services.asset_type import AssetTypeService
 from backend.app.services.asset import AssetService
 from backend.app.services.category import CategoryService
+from backend.app.routers.subscription import create_subscription_router
 from backend.app.routers.subscription_period import create_subscription_period_router
 from backend.app.routers.dashboard import create_dashboard_router
 from backend.app.routers.audit import create_audit_router
@@ -109,6 +110,11 @@ def setup_routes():
     app.include_router(
         create_subscription_period_router(period_svc),
         prefix="/api/v1/subscription-periods",
+        dependencies=auth_deps,
+    )
+    app.include_router(
+        create_subscription_router(unified_asset_repo),
+        prefix="/api/v1/subscriptions",
         dependencies=auth_deps,
     )
     app.include_router(
@@ -198,6 +204,22 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         status_code=422,
         content={"code": 42200, "data": None, "message": "; ".join(messages)},
     )
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    """Return HTTPException in the project's standard error format.
+
+    Without this, FastAPI wraps ``detail`` in ``{"detail": ...}`` which
+    the frontend cannot read directly.  When *detail* is already a dict
+    (produced by the ``error()`` helper), use it as-is; otherwise build
+    a minimal error envelope.
+    """
+    if isinstance(exc.detail, dict):
+        content = exc.detail
+    else:
+        content = {"code": exc.status_code * 100, "data": None, "message": str(exc.detail)}
+    return JSONResponse(status_code=exc.status_code, content=content)
 
 
 # CORS: configurable origins (comma-separated via CORS_ORIGINS env var)

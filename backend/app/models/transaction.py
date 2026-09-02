@@ -84,7 +84,7 @@ class CreateTransactionRequest(BaseModel):
     category_id: int | None = None
     account_id: int | None = None
     to_account_id: int | None = None
-    transaction_date: str = Field(pattern=r'^\d{4}-\d{2}-\d{2}$', description="交易日期 YYYY-MM-DD")
+    transaction_date: str = Field(pattern=r'^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}:\d{2})?$', description="交易日期 YYYY-MM-DD 或 YYYY-MM-DD HH:MM:SS")
     merchant: str = Field(default='', max_length=500)
     note: str = Field(default='', max_length=2000)
 
@@ -108,7 +108,7 @@ class UpdateTransactionRequest(BaseModel):
     category_id: int | None = None
     account_id: int | None = None
     to_account_id: int | None = None
-    transaction_date: str | None = Field(default=None, pattern=r'^\d{4}-\d{2}-\d{2}$')
+    transaction_date: str | None = Field(default=None, pattern=r'^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}:\d{2})?$')
     merchant: str | None = Field(default=None, max_length=500)
     note: str | None = Field(default=None, max_length=2000)
 

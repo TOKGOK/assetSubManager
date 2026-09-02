@@ -1,5 +1,5 @@
 import { useMemo, useEffect, useState } from 'react'
-import { Card, Col, Row, Statistic, Table, List, Tag, Typography, theme } from 'antd'
+import { Card, Col, Row, Statistic, Table, List, Tag, Typography, theme, Result } from 'antd'
 import {
   DollarOutlined, AppstoreOutlined, SyncOutlined, CheckCircleOutlined,
 } from '@ant-design/icons'
@@ -72,9 +72,9 @@ export default function Dashboard() {
   const { token } = theme.useToken()
   const isDark = useIsDark()
 
-  const { data: dashboard, isLoading } = useDashboard()
+  const { data: dashboard, isLoading, isError } = useDashboard()
   const { data: categoryStats } = useCategoryStats()
-  const { data: reminders } = useQuery({
+  const { data: reminders, isError: remindersError } = useQuery({
     queryKey: ['subscription-reminders'],
     queryFn: async () => {
       const { data } = await client.get<{ code: number; data: any[] }>('/subscriptions/reminders?days=30')
@@ -87,9 +87,27 @@ export default function Dashboard() {
   const COLORS = isDark ? COLORS_DARK : COLORS_LIGHT
   const BAR_COLOR = isDark ? BAR_DARK : BAR_LIGHT
 
-  // Pie uses count (part-to-whole identity); bar uses total_value (magnitude).
-  const pieData = useMemo(() => categoryStats ?? [], [categoryStats])
-  const barData = useMemo(() => categoryStats ?? [], [categoryStats])
+  // Map backend category keys to localized labels for chart display.
+  const TYPE_NAME_KEYS: Record<string, string> = {
+    physical: 'dashboard.typeNames.physical',
+    virtual: 'dashboard.typeNames.virtual',
+    subscription: 'dashboard.typeNames.subscription',
+  }
+
+  const pieData = useMemo(() =>
+    (categoryStats ?? []).map(item => ({
+      ...item,
+      name: t(TYPE_NAME_KEYS[item.name as keyof typeof TYPE_NAME_KEYS] ?? item.name),
+    })),
+    [categoryStats, t]
+  )
+  const barData = useMemo(() =>
+    (categoryStats ?? []).map(item => ({
+      ...item,
+      name: t(TYPE_NAME_KEYS[item.name as keyof typeof TYPE_NAME_KEYS] ?? item.name),
+    })),
+    [categoryStats, t]
+  )
 
   // Theme tokens surfaced as CSS custom properties so the SVG chrome (grid,
   // axis text, pie label text) tracks light/dark without per-element JS logic.
@@ -102,13 +120,14 @@ export default function Dashboard() {
   const upcomingCols = [
     { title: t('dashboard.name'), dataIndex: 'name', key: 'name' },
     {
-      title: t('dashboard.amount'), dataIndex: 'amount', key: 'amount',
+      title: t('dashboard.value'), dataIndex: ['custom_data', 'value'], key: 'value',
       render: (v: number) => `¥${v.toFixed(2)}`,
     },
     { title: t('dashboard.cycle'), dataIndex: 'period_name', key: 'period_name' },
     { title: t('dashboard.dueDate'), dataIndex: 'next_renewal', key: 'next_renewal' },
   ]
 
+  if (isError) return <Result status="warning" title={t('dashboard.loadFailed')} />
   if (isLoading || !dashboard) return <div>{t('common.loading')}</div>
 
   return (
@@ -162,7 +181,7 @@ export default function Dashboard() {
       {/* ---- Charts row: pie (identity) + bar (magnitude) ---- */}
       <Row gutter={16} className="mt-4">
         <Col xs={24} lg={12}>
-          <Card title={t('dashboard.categoryDistribution', '资产分类分布')}>
+          <Card title={t('dashboard.categoryDistribution')}>
             {pieData.length > 0 ? (
               <ResponsiveContainer width="100%" height={300}>
                 <PieChart>
@@ -206,7 +225,7 @@ export default function Dashboard() {
         </Col>
 
         <Col xs={24} lg={12}>
-          <Card title={t('dashboard.categoryValue', '分类资产价值')}>
+          <Card title={t('dashboard.categoryValue')}>
             {barData.length > 0 ? (
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={barData}>
@@ -276,7 +295,9 @@ export default function Dashboard() {
       <Row gutter={16} className="mt-4">
         <Col xs={24}>
           <Card title={t('dashboard.expiringSoon')}>
-            {reminders && reminders.length > 0 ? (
+            {remindersError ? (
+              <Typography.Text type="danger">{t('dashboard.loadFailed')}</Typography.Text>
+            ) : reminders && reminders.length > 0 ? (
               <List
                 size="small"
                 dataSource={reminders.slice(0, 5)}
@@ -284,7 +305,7 @@ export default function Dashboard() {
                   <List.Item>
                     <List.Item.Meta
                       title={item.name}
-                      description={`${t('subscriptions.nextRenewal')}: ${item.next_renewal} | ¥${item.amount}`}
+                      description={`${t('subscriptions.nextRenewal')}: ${item.next_renewal} | ¥${item.custom_data?.value ?? 0}`}
                     />
                     <Tag color="orange">{t('dashboard.expiringSoon')}</Tag>
                   </List.Item>

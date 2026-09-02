@@ -41,6 +41,7 @@ export interface FieldDefinition {
   label: string
   type: FieldType
   required?: boolean
+  default?: any
   options?: FieldOptions
 }
 

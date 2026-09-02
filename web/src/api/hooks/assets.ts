@@ -34,6 +34,8 @@ export function useCreateAsset() {
       client.post('/assets/', req).then(r => r.data.data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['assets'] })
+      qc.invalidateQueries({ queryKey: ['dashboard'] })
+      qc.invalidateQueries({ queryKey: ['category-stats'] })
     },
   })
 }
@@ -46,6 +48,8 @@ export function useUpdateAsset() {
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: ['assets'] })
       qc.invalidateQueries({ queryKey: ['asset', vars.id] })
+      qc.invalidateQueries({ queryKey: ['dashboard'] })
+      qc.invalidateQueries({ queryKey: ['category-stats'] })
     },
   })
 }
@@ -56,6 +60,8 @@ export function useDeleteAsset() {
     mutationFn: (id: number) => client.delete(`/assets/${id}`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['assets'] })
+      qc.invalidateQueries({ queryKey: ['dashboard'] })
+      qc.invalidateQueries({ queryKey: ['category-stats'] })
     },
   })
 }
@@ -67,6 +73,8 @@ export function useBatchDeleteAssets() {
       client.post('/assets/batch-delete', { ids }).then(r => r.data.data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['assets'] })
+      qc.invalidateQueries({ queryKey: ['dashboard'] })
+      qc.invalidateQueries({ queryKey: ['category-stats'] })
     },
   })
 }

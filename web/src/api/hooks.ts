@@ -74,6 +74,7 @@ export function useDashboard() {
       return data.data
     },
     staleTime: 60_000,
+    retry: false,
   })
 }
 
@@ -85,6 +86,7 @@ export function useCategoryStats() {
       return data.data
     },
     staleTime: 60_000,
+    retry: false,
   })
 }
 

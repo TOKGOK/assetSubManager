@@ -16,7 +16,7 @@ def create_asset_router(svc: AssetService) -> APIRouter:
     # List
     # ------------------------------------------------------------------
 
-    @router.get("/", summary="获取资产列表", description="支持按类型、分类筛选，关键词搜索，分页")
+    @router.get("/", summary="获取资产列表", description="支持按类型、分类、状态筛选，关键词搜索，分页")
     def list_assets(
         type_ids: str = Query(
             "",
@@ -24,6 +24,7 @@ def create_asset_router(svc: AssetService) -> APIRouter:
         ),
         category_id: int | None = Query(None, description="分类 ID"),
         search: str = Query("", description="搜索关键词（搜索 name 和 custom_data）"),
+        status: str = Query("", description="状态筛选（active/sold/disposed/cancelled/expired）"),
         page: int = Query(1, ge=1, description="页码"),
         page_size: int = Query(20, ge=1, le=100, description="每页大小"),
     ):
@@ -42,6 +43,7 @@ def create_asset_router(svc: AssetService) -> APIRouter:
             type_ids=ids,
             category_id=category_id,
             search=search,
+            status=status,
             page=page,
             page_size=page_size,
         )

@@ -166,7 +166,7 @@ CREATE TABLE IF NOT EXISTS subscriptions (
     start_date TEXT NOT NULL,
     next_renewal TEXT DEFAULT '',
     auto_renew INTEGER DEFAULT 0,
-    reminder_days INTEGER DEFAULT 7,
+    reminder_days INTEGER DEFAULT 3,
     notes TEXT DEFAULT '',
     status TEXT DEFAULT 'active' CHECK(status IN ('active', 'cancelled', 'expired')),
     created_at DATETIME DEFAULT (datetime('now')),
@@ -294,11 +294,11 @@ INSERT OR IGNORE INTO subscription_categories (id, name, icon, description, sort
 INSERT OR IGNORE INTO subscription_periods (name, rule_type, interval_days, interval_hours, month_day, month, day, is_default)
     VALUES ('日付', 'daily_interval', 1, 0, 0, 0, 0, 1);
 INSERT OR IGNORE INTO subscription_periods (name, rule_type, interval_days, interval_hours, month_day, month, day, is_default)
-    VALUES ('月付', 'monthly_day', 0, 0, 1, 0, 0, 1);
+    VALUES ('月付', 'monthly_day', 0, 0, 0, 0, 0, 1);
 INSERT OR IGNORE INTO subscription_periods (name, rule_type, interval_days, interval_hours, month_day, month, day, is_default)
     VALUES ('季付', 'daily_interval', 90, 0, 0, 0, 0, 1);
 INSERT OR IGNORE INTO subscription_periods (name, rule_type, interval_days, interval_hours, month_day, month, day, is_default)
-    VALUES ('年付', 'yearly_date', 0, 0, 0, 1, 1, 1);
+    VALUES ('年付', 'yearly_date', 0, 0, 0, 0, 0, 1);
 INSERT OR IGNORE INTO subscription_periods (name, rule_type, interval_days, interval_hours, month_day, month, day, is_default)
     VALUES ('两年付', 'daily_interval', 730, 0, 0, 0, 0, 1);
 INSERT OR IGNORE INTO subscription_periods (name, rule_type, interval_days, interval_hours, month_day, month, day, is_default)
@@ -655,11 +655,10 @@ def _recreate_old_tables(conn: sqlite3.Connection):
 _PHYSICAL_FIELD_CONFIG = json.dumps({
     "fields": [
         {"key": "purchase_date", "label": "购买日期", "type": "date", "required": False},
-        {"key": "purchase_price", "label": "购买价格", "type": "number", "required": False,
-         "options": {"min": 0, "prefix": "¥"}},
-        {"key": "current_value", "label": "当前价值", "type": "number", "required": False,
+        {"key": "value", "label": "价值", "type": "number", "required": False,
          "options": {"min": 0, "prefix": "¥"}},
         {"key": "currency", "label": "货币", "type": "select", "required": False,
+         "default": "CNY",
          "options": {"choices": [
              {"value": "CNY", "label": "CNY"},
              {"value": "USD", "label": "USD"},
@@ -678,6 +677,8 @@ _VIRTUAL_FIELD_CONFIG = json.dumps({
         {"key": "expiry_date", "label": "到期日期", "type": "date", "required": False},
         {"key": "platform", "label": "平台", "type": "text", "required": False},
         {"key": "url", "label": "网址", "type": "text", "required": False},
+        {"key": "value", "label": "价值", "type": "number", "required": False,
+         "options": {"min": 0, "prefix": "¥"}},
         {"key": "notes", "label": "备注", "type": "textarea", "required": False,
          "options": {"rows": 3}},
     ]
@@ -685,9 +686,10 @@ _VIRTUAL_FIELD_CONFIG = json.dumps({
 
 _SUBSCRIPTION_FIELD_CONFIG = json.dumps({
     "fields": [
-        {"key": "amount", "label": "金额", "type": "number", "required": False,
+        {"key": "value", "label": "价值", "type": "number", "required": False,
          "options": {"min": 0, "prefix": "¥"}},
         {"key": "currency", "label": "货币", "type": "select", "required": False,
+         "default": "CNY",
          "options": {"choices": [
              {"value": "CNY", "label": "CNY"},
              {"value": "USD", "label": "USD"},
@@ -699,6 +701,7 @@ _SUBSCRIPTION_FIELD_CONFIG = json.dumps({
         {"key": "next_renewal", "label": "下次续费", "type": "date", "required": False},
         {"key": "auto_renew", "label": "自动续费", "type": "boolean", "required": False},
         {"key": "reminder_days", "label": "提醒天数", "type": "number", "required": False,
+         "default": 3,
          "options": {"min": 0, "max": 365}},
         {"key": "notes", "label": "备注", "type": "textarea", "required": False,
          "options": {"rows": 3}},
@@ -1040,6 +1043,67 @@ def _migrate_subscription_periods(conn: sqlite3.Connection):
     logger.info("Migration subscriptions.cycle → period_id complete")
 
 
+def _fix_default_period_rules(conn):
+    """修正默认周期配置：月付/年付应基于开始日期计算，而非固定日期。
+
+    早期版本中"月付" month_day=1（每月1号）、"年付" month=1 day=1（1月1日），
+    导致自动计算结果与开始日期无关。修正为 0 表示"按开始日期"。
+    """
+    conn.execute(
+        "UPDATE subscription_periods SET month_day = 0 "
+        "WHERE name = '月付' AND is_default = 1 AND month_day != 0"
+    )
+    conn.execute(
+        "UPDATE subscription_periods SET month = 0, day = 0 "
+        "WHERE name = '年付' AND is_default = 1 AND (month != 0 OR day != 0)"
+    )
+    conn.commit()
+
+
+def _fix_reminder_days_default(conn: sqlite3.Connection) -> None:
+    """Update subscriptions table default for reminder_days from 7 to 3.
+
+    SQLite doesn't support ALTER TABLE ALTER COLUMN, so this is a no-op.
+    New tables get DEFAULT 3 via MIGRATION_SQL. Existing rows keep their values.
+    """
+    pass
+
+
+def _fix_value_field(conn: sqlite3.Connection) -> None:
+    """Rename purchase_price → value (physical) and amount → value (subscription) in custom_data."""
+    import json as _json
+    rows = conn.execute(
+        "SELECT id, type_id, custom_data FROM assets WHERE custom_data IS NOT NULL"
+    ).fetchall()
+    updated = False
+    for row in rows:
+        id_, type_id, cd = row["id"], row["type_id"], row["custom_data"]
+        if not cd:
+            continue
+        try:
+            data = _json.loads(cd) if isinstance(cd, str) else cd
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if not isinstance(data, dict):
+            continue
+        changed = False
+        if type_id == 1 and "purchase_price" in data:
+            data["value"] = data.pop("purchase_price")
+            changed = True
+        if type_id == 3 and "amount" in data:
+            data["value"] = data.pop("amount")
+            changed = True
+        if changed:
+            conn.execute(
+                "UPDATE assets SET custom_data = ? WHERE id = ?",
+                (_json.dumps(data, ensure_ascii=False), id_),
+            )
+            updated = True
+    if updated:
+        conn.commit()
+        logger.info("Migrated purchase_price/amount → value in custom_data")
+
+
 def init_db(cfg: Config) -> sqlite3.Connection:
     global _db_instance
     os.makedirs(cfg.data_dir, exist_ok=True)
@@ -1068,6 +1132,15 @@ def init_db(cfg: Config) -> sqlite3.Connection:
 
     # Migrate to unified asset schema (asset_types, new assets, categories.type_id)
     _migrate_unified_schema(conn)
+
+    # Fix default subscription period rules (month_day / month / day)
+    _fix_default_period_rules(conn)
+
+    # Fix reminder_days default from 7 to 3
+    _fix_reminder_days_default(conn)
+
+    # Migrate purchase_price/amount → value in custom_data
+    _fix_value_field(conn)
 
     logger.info("Migrations complete")
 

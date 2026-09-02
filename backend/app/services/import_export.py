@@ -33,13 +33,12 @@ class ImportExportService:
             "name": a.get("name", ""),
             "category_name": a.get("category_name", ""),
             "purchase_date": cd.get("purchase_date", ""),
-            "purchase_price": cd.get("purchase_price", 0),
-            "current_value": cd.get("current_value", 0),
+            "value": cd.get("value", 0),
             "currency": cd.get("currency", "CNY"),
             "notes": cd.get("notes", ""),
             "custom_fields": {
                 k: v for k, v in cd.items()
-                if k not in {"purchase_date", "purchase_price", "current_value", "currency", "notes"}
+                if k not in {"purchase_date", "value", "currency", "notes"}
             },
         }
 
@@ -58,8 +57,8 @@ class ImportExportService:
         output = io.StringIO()
         writer = csv.writer(output)
         header = [
-            "name", "category", "purchase_date", "purchase_price",
-            "current_value", "currency", "notes",
+            "name", "category", "purchase_date", "value",
+            "currency", "notes",
         ] + field_names
         writer.writerow(header)
 
@@ -68,8 +67,7 @@ class ImportExportService:
                 a["name"],
                 a["category_name"],
                 a["purchase_date"],
-                a["purchase_price"],
-                a["current_value"],
+                a["value"],
                 a["currency"],
                 a["notes"],
             ] + [a["custom_fields"].get(fn, "") for fn in field_names]
@@ -89,8 +87,7 @@ class ImportExportService:
                 "name": p["name"],
                 "category_name": p["category_name"],
                 "purchase_date": p["purchase_date"],
-                "purchase_price": p["purchase_price"],
-                "current_value": p["current_value"],
+                "value": p["value"],
                 "currency": p["currency"],
                 "notes": p["notes"],
                 "custom_fields": p["custom_fields"],
@@ -142,17 +139,20 @@ class ImportExportService:
 
                 # Build custom_data from CSV columns
                 custom_data: dict = {}
-                for col in ("purchase_date", "purchase_price", "current_value", "currency", "notes"):
+                # Backward compat: old CSV may use "purchase_price"
+                if "purchase_price" in row and "value" not in row:
+                    row["value"] = row.pop("purchase_price")
+                for col in ("purchase_date", "value", "currency", "notes"):
                     val = row.get(col, "")
                     if val:
-                        if col in ("purchase_price", "current_value"):
+                        if col == "value":
                             custom_data[col] = _float(val)
                         else:
                             custom_data[col] = val
 
                 # Extra columns become custom fields
-                base_cols = {"name", "category", "purchase_date", "purchase_price",
-                             "current_value", "currency", "notes"}
+                base_cols = {"name", "category", "purchase_date", "value",
+                             "currency", "notes"}
                 for k, v in row.items():
                     if k and k not in base_cols and v:
                         custom_data[k] = v
@@ -220,7 +220,10 @@ class ImportExportService:
 
                 # Build custom_data from JSON item
                 custom_data: dict = {}
-                for key in ("purchase_date", "purchase_price", "current_value", "currency", "notes"):
+                # Backward compat: old JSON may use "purchase_price"
+                if item.get("purchase_price") is not None and item.get("value") is None:
+                    item["value"] = item.pop("purchase_price")
+                for key in ("purchase_date", "value", "currency", "notes"):
                     val = item.get(key)
                     if val is not None:
                         custom_data[key] = val

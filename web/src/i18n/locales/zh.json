@@ -62,7 +62,8 @@
     "switchToLight": "切换到亮色模式",
     "switchToDark": "切换到暗色模式",
     "requestFailed": "请求失败",
-    "networkError": "网络错误"
+    "networkError": "网络错误",
+    "connectionFailed": "连接失败"
   },
   "dashboard": {
     "totalAssets": "资产总数",
@@ -71,13 +72,18 @@
     "expiringSoon": "即将到期",
     "monthlySubscription": "本月订阅支出",
     "assetDistribution": "资产分布",
-    "categoryDistribution": "资产分类分布",
-    "categoryValue": "分类资产价值",
-    "noCategoryData": "暂无分类数据",
+    "categoryDistribution": "资产类型分布",
+    "categoryValue": "类型资产价值",
+    "noCategoryData": "暂无类型数据",
+    "typeNames": {
+      "physical": "实体资产",
+      "virtual": "虚拟资产",
+      "subscription": "订阅"
+    },
     "upcomingSubscriptions": "即将到期订阅",
     "noExpiring": "暂无即将到期的订阅",
     "name": "名称",
-    "amount": "金额",
+    "value": "价值",
     "cycle": "周期",
     "dueDate": "到期日",
     "unit": {
@@ -85,13 +91,13 @@
       "pieces": "件",
       "perMonth": "元/月",
       "items": "项"
-    }
+    },
+    "loadFailed": "加载失败"
   },
   "assets": {
     "name": "资产名称",
     "category": "分类",
     "purchaseDate": "购买日期",
-    "purchasePrice": "购买价格",
     "currentValue": "当前价值",
     "currency": "货币",
     "notes": "备注",
@@ -113,9 +119,8 @@
     "statusDisposed": "已处置",
     "recordValue": "记录估值",
     "valueRecorded": "估值已记录",
-    "estimatedValue": "估值金额",
     "valueHistory": "估值历史",
-    "value": "估值",
+    "value": "价值",
     "date": "日期",
     "source": "来源",
     "valueTrend": "估值趋势",
@@ -200,7 +205,7 @@
   },
   "subscriptions": {
     "name": "订阅名称",
-    "amount": "金额",
+    "value": "价值",
     "cycle": "周期",
     "nextRenewal": "下次续费",
     "autoRenew": "自动续费",
@@ -339,7 +344,9 @@
     "type": "类型",
     "income": "收入",
     "expense": "支出",
-    "deleteConfirm": "确定删除这个分类吗？"
+    "deleteConfirm": "确定删除这个分类吗？",
+    "sortOrder": "排序",
+    "all": "全部"
   },
   "account": {
     "title": "账户管理",
@@ -453,6 +460,11 @@
     "yes": "是",
     "no": "否",
     "fieldCount": "字段数"
+  },
+  "serviceUnavailable": {
+    "title": "服务不可用",
+    "description": "无法连接到后端服务，请检查服务是否已启动",
+    "retry": "重新连接"
   },
   "assetManagement": {
     "type": "资产类型",

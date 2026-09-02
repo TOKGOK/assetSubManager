@@ -3,13 +3,29 @@ import { Table, Button, Space, Tag, Input, Select, Popconfirm, message } from 'a
 import { PlusOutlined, SearchOutlined, DeleteOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
+import { useQuery } from '@tanstack/react-query'
 import PageHeader from '../../components/layout/PageHeader'
+import client from '../../api/client'
 import { useAssets, useBatchDeleteAssets, useDeleteAsset } from '../../api/hooks/assets'
 import { useAssetTypes } from '../../api/hooks/asset-types'
 import { useCategoriesByType } from '../../api/hooks/categories'
 import { useDebounce } from '../../hooks/useDebounce'
 import type { Asset } from '../../types/asset'
 import type { AssetType, FieldDefinition } from '../../types/asset-type'
+
+/** Generic hook to fetch options from an API endpoint for dynamic select fields */
+function useApiOptions(endpoint: string | undefined) {
+  return useQuery({
+    queryKey: ['dynamic-options', endpoint],
+    queryFn: async () => {
+      if (!endpoint) return []
+      const { data } = await client.get(endpoint)
+      return data.data || data
+    },
+    enabled: !!endpoint,
+    staleTime: 5 * 60_000,
+  })
+}
 
 export default function AssetManagement() {
   const { t } = useTranslation()
@@ -44,6 +60,49 @@ export default function AssetManagement() {
 
   // Categories by selected type (only when single type selected)
   const { data: categories = [] } = useCategoriesByType(singleTypeId ?? 0)
+
+  // Relevant types at component level so multiple hooks can reference it
+  const relevantTypes = isSingleType && singleTypeObj
+    ? [singleTypeObj]
+    : selectedTypeIds.length > 0
+      ? selectedTypeIds.map(id => assetTypes.find(at => at.id === id)).filter(Boolean) as AssetType[]
+      : assetTypes
+
+  // Collect all unique api_endpoint values from visible field definitions
+  const dynamicEndpoints = useMemo(() => {
+    const endpoints = new Set<string>()
+    for (const at of relevantTypes) {
+      for (const field of at?.field_config?.fields || []) {
+        if (field.type === 'select' && field.options?.api_endpoint) {
+          endpoints.add(field.options.api_endpoint)
+        }
+      }
+    }
+    return Array.from(endpoints)
+  }, [relevantTypes])
+
+  // Fetch options for all dynamic endpoints
+  const periodOptions = useApiOptions(
+    dynamicEndpoints.find(e => e.includes('subscription-periods'))
+  )
+
+  // For relation fields, look up related assets from loaded data
+
+  // Build lookup maps for dynamic selects
+  const dynamicSelectMaps = useMemo(() => {
+    const maps = new Map<string, Map<string, string>>()
+
+    // For subscription periods (and similar api_endpoint selects)
+    if (periodOptions.data && Array.isArray(periodOptions.data)) {
+      const map = new Map<string, string>()
+      for (const item of periodOptions.data) {
+        map.set(String(item.id), item.name)
+      }
+      maps.set('/subscription-periods/', map)
+    }
+
+    return maps
+  }, [periodOptions.data])
 
   // Mutations
   const batchDelete = useBatchDeleteAssets()
@@ -91,8 +150,22 @@ export default function AssetManagement() {
       case 'datetime':
         return String(value)
       case 'select': {
+        // Dynamic select with api_endpoint
+        if (field.options?.api_endpoint) {
+          const lookupMap = dynamicSelectMaps.get(field.options.api_endpoint)
+          if (lookupMap) {
+            return lookupMap.get(String(value)) || String(value)
+          }
+          return String(value) // fallback while loading
+        }
+        // Static select with choices
         const choice = field.options?.choices?.find(c => c.value === value)
         return choice ? choice.label : String(value)
+      }
+      case 'relation': {
+        // For relation fields, show the related asset's name
+        const relatedAsset = assetsData?.items?.find(item => item.id === Number(value))
+        return relatedAsset?.name || String(value)
       }
       default:
         return String(value)
@@ -121,6 +194,7 @@ export default function AssetManagement() {
         title: t('common.name'),
         dataIndex: 'name',
         key: 'name',
+        width: 200,
         render: (text: string, record: Asset) => (
           <a onClick={() => navigate(`/assets/${record.id}/edit`)}>{text}</a>
         ),
@@ -132,61 +206,32 @@ export default function AssetManagement() {
       },
     ]
 
-    // Single type mode: add dynamic columns from field_config
-    if (isSingleType && singleTypeObj?.field_config?.fields) {
-      const fields = singleTypeObj.field_config.fields
-      const dynamicCols = fields.map((field) => ({
-        title: field.label,
-        key: `custom_${field.key}`,
-        render: (_: unknown, record: Asset) => {
-          const value = field.type === 'computed'
-            ? record.computed_fields?.[field.key]
-            : record.custom_data?.[field.key]
-          return renderFieldValue(value, field)
-        },
-      }))
-
-      return [
-        ...baseColumns,
-        ...dynamicCols,
-        {
-          title: t('common.status'),
-          dataIndex: 'status',
-          key: 'status',
-          width: 100,
-          render: (s: string) => s ? (
-            <Tag color={statusMap[s]?.color}>{statusMap[s]?.label || s}</Tag>
-          ) : '-',
-        },
-        {
-          title: t('common.actions'),
-          key: 'action',
-          width: 150,
-          render: (_: unknown, record: Asset) => (
-            <Space>
-              <Button type="link" size="small" onClick={() => navigate(`/assets/${record.id}/edit`)}>
-                {t('common.edit')}
-              </Button>
-              <Popconfirm
-                title={t('common.confirmDelete')}
-                onConfirm={async () => {
-                  await deleteAsset.mutateAsync(record.id)
-                  message.success(t('common.deleted'))
-                }}
-              >
-                <Button type="link" danger size="small">
-                  {t('common.delete')}
-                </Button>
-              </Popconfirm>
-            </Space>
-          ),
-        },
-      ]
+    // Collect custom fields to display from relevant asset types
+    const seenKeys = new Set<string>()
+    const customCols: any[] = []
+    for (const at of relevantTypes) {
+      const fields = at?.field_config?.fields || []
+      for (const field of fields) {
+        // Skip textarea and notes — too verbose for table display
+        if (field.type === 'textarea' || field.key === 'notes') continue
+        if (seenKeys.has(field.key)) continue
+        seenKeys.add(field.key)
+        customCols.push({
+          title: field.label,
+          key: `custom_${field.key}`,
+          width: field.type === 'number' ? 120 : 130,
+          render: (_: unknown, record: Asset) => {
+            const value = field.type === 'computed'
+              ? record.computed_fields?.[field.key]
+              : record.custom_data?.[field.key]
+            return renderFieldValue(value, field)
+          },
+        })
+      }
     }
 
-    // Multi-type or all-types mode: show common columns only
-    return [
-      ...baseColumns,
+    // Status + actions trailing columns
+    const trailingCols = [
       {
         title: t('common.status'),
         dataIndex: 'status',
@@ -220,7 +265,9 @@ export default function AssetManagement() {
         ),
       },
     ]
-  }, [isSingleType, singleTypeObj, typeMap, t, navigate, deleteAsset, statusMap])
+
+    return [...baseColumns, ...customCols, ...trailingCols]
+  }, [isSingleType, singleTypeObj, assetTypes, selectedTypeIds, typeMap, t, navigate, deleteAsset, statusMap, dynamicSelectMaps, assetsData, relevantTypes])
 
   // Row selection
   const rowSelection = {
@@ -343,8 +390,7 @@ export default function AssetManagement() {
         columns={columns}
         rowKey="id"
         loading={isLoading}
-        virtual
-        scroll={{ y: 600, x: 'max-content' }}
+        scroll={{ x: 'max-content' }}
         pagination={{
           current: page,
           pageSize: assetsData?.page_size || 20,

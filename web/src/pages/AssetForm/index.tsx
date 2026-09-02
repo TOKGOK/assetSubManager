@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useRef, useCallback } from 'react'
 import { Form, Input, Select, Button, Card, Spin, message } from 'antd'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
@@ -7,6 +7,7 @@ import DynamicForm, { validateForm } from '../../components/DynamicForm'
 import { useAssetTypes, useAssetType } from '../../api/hooks/asset-types'
 import { useAsset, useCreateAsset, useUpdateAsset } from '../../api/hooks/assets'
 import { useCategoriesByType } from '../../api/hooks/categories'
+import client from '../../api/client'
 
 export default function AssetForm() {
   const { t } = useTranslation()
@@ -23,6 +24,10 @@ export default function AssetForm() {
   })
   const [customValues, setCustomValues] = useState<Record<string, any>>({})
   const [customErrors, setCustomErrors] = useState<Record<string, string>>({})
+  // Tracks whether user manually edited next_renewal (stops auto-calc until cycle/start_date changes again)
+  const manualNextRenewalRef = useRef(false)
+  const autoCalculatingRef = useRef(false)
+  const prevCustomValuesRef = useRef<Record<string, any>>({})
 
   // Hooks
   const { data: assetTypes = [], isLoading: typesLoading } = useAssetTypes()
@@ -40,20 +45,82 @@ export default function AssetForm() {
         category_id: existingAsset.category_id,
       })
       setSelectedTypeId(existingAsset.type_id)
-      setCustomValues(existingAsset.custom_data || {})
+      const cd = existingAsset.custom_data || {}
+      setCustomValues(cd)
+      prevCustomValuesRef.current = cd
+      // Don't auto-overwrite next_renewal if it already has a value from DB
+      if (cd.next_renewal) {
+        manualNextRenewalRef.current = true
+      }
     }
   }, [isEdit, existingAsset, form])
 
   // When type changes in create mode, reset custom values and category
   const handleTypeChange = (typeId: number) => {
     setSelectedTypeId(typeId)
-    setCustomValues({})
+
+    // Build default values from field_config
+    const typeObj = assetTypes.find(at => at.id === typeId)
+    const defaults: Record<string, any> = {}
+    if (typeObj?.field_config?.fields) {
+      for (const field of typeObj.field_config.fields) {
+        if (field.default !== undefined) {
+          defaults[field.key] = field.default
+        }
+      }
+    }
+
+    setCustomValues(defaults)
     setCustomErrors({})
     form.setFieldValue('category_id', undefined)
+    manualNextRenewalRef.current = false
   }
 
-  const handleCustomChange = (values: Record<string, any>) => {
+  const handleCustomChange = useCallback((values: Record<string, any>) => {
+    const prev = prevCustomValuesRef.current
+
+    // User manually edited next_renewal — mark so we don't auto-overwrite
+    if (values.next_renewal !== prev.next_renewal && !autoCalculatingRef.current) {
+      manualNextRenewalRef.current = true
+    }
+
+    const cycleChanged = values.cycle !== prev.cycle
+    const startDateChanged = values.start_date !== prev.start_date
+
+    // Reset manual flag when user changes a dependency — re-enable auto-calc
+    if (cycleChanged || startDateChanged) {
+      manualNextRenewalRef.current = false
+    }
+
     setCustomValues(values)
+    prevCustomValuesRef.current = values
+
+    if (
+      (cycleChanged || startDateChanged) &&
+      values.cycle &&
+      values.start_date
+    ) {
+      autoCalculatingRef.current = true
+      client
+        .get(`/subscription-periods/${values.cycle}/calculate-next-renewal`, {
+          params: { from_date: values.start_date },
+        })
+        .then((res) => {
+          const nextRenewal = res.data?.data?.next_renewal
+          if (nextRenewal) {
+            setCustomValues((cur) => ({ ...cur, next_renewal: nextRenewal }))
+            prevCustomValuesRef.current = {
+              ...prevCustomValuesRef.current,
+              next_renewal: nextRenewal,
+            }
+          }
+        })
+        .catch(() => {})
+        .finally(() => {
+          autoCalculatingRef.current = false
+        })
+    }
+
     // Clear errors on change
     setCustomErrors((prev) => {
       const next = { ...prev }
@@ -62,7 +129,7 @@ export default function AssetForm() {
       }
       return next
     })
-  }
+  }, [])
 
   const handleSubmit = async () => {
     try {
@@ -95,8 +162,14 @@ export default function AssetForm() {
         message.success(t('assets.assetCreated'))
       }
       navigate('/asset-management')
-    } catch (error) {
-      if (error instanceof Error) {
+    } catch (error: any) {
+      // API errors already shown by axios interceptor;
+      // only show a fallback for unexpected errors
+      if (error?.response) {
+        // API error — interceptor already displayed it
+        return
+      }
+      if (error instanceof Error && error.message) {
         message.error(error.message)
       }
     }
